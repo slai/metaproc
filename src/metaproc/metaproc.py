@@ -38,8 +38,10 @@ def default_facts_function(path, conf, facts):
         season_number = facts.get('season_number', '')
         episode_number = facts.get('episode_number', '')
         
-        # if this is a file, jump straight to the file regexps
-        if os.path.isfile(path):
+        # if this is a file, jump straight to the file regexps if we don't have
+        # all the details already
+        if os.path.isfile(path) and not \
+            (series_title and season_number and episode_number):
             for regexp in conf['TV_FILE_FACTS_REGEXPS']:
                 m = regexp.search(file_name)
                 if m:
@@ -236,6 +238,15 @@ def process_path(path, conf, base_facts, is_root=False):
             process_path(f, conf, facts)
         else:
             # this is a file; process it
+            # load the override file if it exists
+            override_path = f + '.metaproc-override'
+            if os.path.exists(override_path):
+                conf = load_settings(override_path, conf)
+        
+                # if it contains a facts override, apply it
+                if 'facts' in conf.keys():
+                    facts.update(conf.pop('facts'))
+            
             # get the facts for this file
             conf['FACTS_FUNCTION'](f, conf, facts)
             
@@ -318,7 +329,19 @@ def clean_path(path, conf, base_facts, recursive=False):
                 clean_path(f, conf, facts, recursive)
             else:
                 # this is a file; clean it
+                # load the override file if it exists
+                override_path = f + '.metaproc-override'
+                if os.path.exists(override_path):
+                    conf = load_settings(override_path, conf)
+            
+                    # if it contains a facts override, apply it
+                    if 'facts' in conf.keys():
+                        facts.update(conf.pop('facts'))
+                
+                # get the facts for this file
                 conf['FACTS_FUNCTION'](f, conf, facts)
+                
+                # clean this file
                 conf['PROCESSOR'].clean(f, conf, facts)
 
 def main():

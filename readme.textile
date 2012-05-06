@@ -1,0 +1,12 @@
+h1. metaproc - a flexible command-line metadata retriever for TV shows and movies.
+
+h2. Overview
+This project came about after I looked for a scriptable metadata retrieved that would run on Linux and could generate metadata files that are readable by "Media Browser":http://www.mediabrowser.tv/, a Windows Media Center plugin, and found none. Most of the tools that I came across, e.g. "Metabrowser":http://themetabrowser.com/, were Windows only. While my media centre box was Windows, it was a pain to use and administer it, especially as it meant having to close Windows Media Center.
+
+Unlike the above tools, metaproc is purely a command-line tool. When there are multiple potential matches, metaproc does not give you a choice; it simply takes the first match that it finds (although you can tell it what to search for so it finds what you want it to). It is designed to be executed on a regular basis, even as a cron task, to keep your metadata up to date.
+
+h2. System Requirements
+metaproc was written in Python, so in theory, it should be executable on any operating system that Python 2.7 or later runs on. Everything is pure Python. It may also work on Python versions before 2.7, with a few changes if any.
+
+In reality though, metaproc was written for and tested on a Linux box running Python 2.7.
+

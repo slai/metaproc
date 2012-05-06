@@ -1,12 +1,163 @@
 h1. metaproc - a flexible command-line metadata retriever for TV shows and movies.
 
-h2. Overview
-This project came about after I looked for a scriptable metadata retrieved that would run on Linux and could generate metadata files that are readable by "Media Browser":http://www.mediabrowser.tv/, a Windows Media Center plugin, and found none. Most of the tools that I came across, e.g. "Metabrowser":http://themetabrowser.com/, were Windows only. While my media centre box was Windows, it was a pain to use and administer it, especially as it meant having to close Windows Media Center.
 
-Unlike the above tools, metaproc is purely a command-line tool. When there are multiple potential matches, metaproc does not give you a choice; it simply takes the first match that it finds (although you can tell it what to search for so it finds what you want it to). It is designed to be executed on a regular basis, even as a cron task, to keep your metadata up to date.
+h2. Overview
+
+
+This app came about after not being able to find a scriptable metadata retriever tool that would run on Linux and could generate metadata files that are readable by "Media Browser":http://www.mediabrowser.tv/, a Windows Media Center plugin. Most of the tools that I came across, such as "Metabrowser":http://themetabrowser.com/, were Windows only. While my media centre box was Windows, having the metadata retriever tool on it would've been a pain to administer.
+
+Unlike the above tools, metaproc is purely a command-line tool. When there are multiple potential matches, metaproc does not give you a choice; it simply takes the first match that it finds (although you can tell it what to search for so it finds what you want it to). It is designed to be executed on a regular basis, even as a cron job, to keep your metadata up to date.
+
+Unfortunately, this also means it needs a bit of technical knowledge to configure, in particular, a knowledge of regular expressions and basic Python would be handy.
+
 
 h2. System Requirements
+
+
 metaproc was written in Python, so in theory, it should be executable on any operating system that Python 2.7 or later runs on. Everything is pure Python. It may also work on Python versions before 2.7, with a few changes if any.
 
-In reality though, metaproc was written for and tested on a Linux box running Python 2.7.
+In reality though, metaproc was written and tested on a Linux box running Python 2.7. All dependencies are bundled with the app itself for easier deployment; they are "tmdb":https://github.com/doganaydin/themoviedb and "tvdb_api":https://github.com/dbr/tvdb_api.
 
+
+h2. Installing metaproc
+
+
+Just extract it to a convenient location.
+
+
+h2. Using metaproc
+
+
+There are two important concepts to know about metaproc - the _facts function_ and the _processor_. The _facts function_ is what metaproc calls on every path it encounters to see what we know about it. Based on the facts it determines (series title, movie title, season number, episode number) the processor will act accordingly (e.g. for a TV show, it will work out whether to download metadata for a series, a season or a particular episode).
+
+The built-in facts function is fairly flexible, but it does make a few assumptions -
+
+* each movie is in its own directory
+* all TV show season directories are within a directory named with the series title (TV show season directories are optional however; you can just place all the episodes into a directory)
+
+If the built-in facts function doesn't work for you, you can easily override it using either the main settings.py file so it applies for everything, or using an override file so it only applies to a certain level. You can even revert back to the default one later down the directory tree if necessary.
+
+The other concept to be aware of is the _processor_. This is the module that will take the derived facts, determine what kind of metadata to retrieve, determine if there is already existing metadata and finally retrieve and write the metadata. It also has capabilities to clean out any existing metadata.
+
+There is currently only one processor, and that is the one for writing Media Browser metadata.
+
+h3. metaproc processing overview
+
+metaproc will initially read the @settings.py@ specified in the command line. This file will give it the configuration it will start with as well as the directories it needs to process.
+
+From there, it will recursively perform the following logic on every directory and file:
+
+* load the .metaproc-override file if it exists
+* get the facts on this file/directory (according to the default_facts_function)
+** is this a file?
+*** if so, run through the TV or movie file fact regular expressions, stopping on the first matching one.
+** is this a directory?
+*** if this is a movie, assume the movie title is the directory name. If this is a TV show, if we know the series title already, then try the TV season facts regular expressions to get the season number, otherwise assume the directory name is the series title.
+* ask the processor to process this file/directory using the given facts
+
+For the Media Browser processor, this means downloading metadata and images. If no images exist, it will drop a @.noimage@ file. This tells metaproc that no images were available for this series/season/episode/movie, so don't bother looking it up again.
+
+If this is a directory, it will also do the following in this order -
+
+* get a list of all the files in the directory
+* apply each include path regular expression to that list, excluding all that *do not* match any of the include path regular expressions
+* apply each exclude path regular expression to that list, excluding any that *do* match.
+
+Note that once a directory has been excluded at one level, the files underneath it cannot be included at a later level.
+
+h3. Configuration overview
+
+metaproc is controlled by a main @settings.py@ file as well as override files. The idea here is that metaproc should work with whatever your media directory structure is and not impose any particular scheme. Therefore the main @settings.py@ file will specify the configuration that metaproc uses at the start, but if there is a @.metaproc-override@ file anywhere in the directory tree, those settings will override the main @settings.py@ file at that level and any levels below it (unless they are overridden again further down).
+
+For example, if you want metaproc to process the directory,
+
+bq. @/mnt/media/TV/Castle/@
+    
+as the TV show 'Castle (2009)' instead of the original 'Castle', you would add a @.metaproc-override@ file in there to tell it to use that series title instead of what will be derived from the directory tree. Override files are also often used to exclude certain directories (e.g. DVD extras).
+
+Besides override files in directories, override files can also exist for a particular file (e.g. to override the episode number detected from the file name). These are simply named with the media file name and the @.metaproc-override@ extension tacked on to the end, e.g.
+
+bq. @/mnt/media/TV/Archer/S01E00 - Archersaurus.avi@
+@/mnt/media/TV/Archer/S01E00 - Archersaurus.avi.metaproc-override@
+
+Both the main settings file and the override files are Python scripts. You don't need to code in Python to configure them though; just follow the examples in the sample @settings.py@.
+
+metaproc makes extensive use of regular expressions to detect the 'facts' of a particular path, i.e. what kind of information we know about that particular directory; do we know the series title, season number, etc. The regular expressions in the sample @settings.py@ file should cover most scenarios, but if you need to write your own, here are some things you will need to know -
+
+* the regular expressions are compiled with the case-insensitive flag on.
+* for your regular expression to be useful, it will need to have one or more of the following named capture groups - @series_title@, @season_number@, @episode_number@ or @movie_title@.
+* the regular expressions are processed from top to bottom, and processing stops when one of them matches, so it is suggested that the more specific regular expressions appear first, and the more general ones, last.
+
+Finally, there is one setting that you can only specify in the main settings.py file, and that is which directories metaproc will process. This is specified using the @DIRS_TO_PROCESS@ setting in the main @settings.py@.
+
+The sample @settings.py@ file is well-documented and it should cover most use cases.
+
+h3. Executing metaproc
+
+metaproc can be executed using the bundled @start_python.sh@ script, which will add the needed paths to @PYTHON_PATH@, e.g.
+
+bq. @./start_python.sh src/metaproc/metaproc.py -s settings.py@
+(the @-s@ option tells metaproc which settings.py file to use.)
+
+If you want, you can also execute metaproc without the start_python.sh script. To do this, you will need to download and install metaproc's dependencies into the OS's Python instance (both the dependencies, "tmdb":https://github.com/doganaydin/themoviedb and "tvdb_api":https://github.com/dbr/tvdb_api, are available from PyPI). It can then be started with -
+
+bq. @python src/metaproc/metaproc.py -s settings.py@
+
+h3. A example configuration and run-through
+
+Let's say you have two directories to process -
+
+* @/mnt/media/TV@ for TV shows
+* @/mnt/media/Movies@ for movies
+
+To start with, add the above two directories into @settings.py@, in the @DIRS_TO_PROCESS@ setting (the notation here is Python list notation - all you need to know is each path needs to be enclosed in quotes (if quotes exist in the path, you will need to prefix them with a \) and each path needs to be separated by a comma).
+
+Then to tell metaproc what type of videos are in each of those directories, you need to create a .metaproc-override file in each of those directories with the following -
+
+bq. @facts = {
+    'type' : 'tv'
+}@
+
+For the movie directory, you will need to change the type from 'tv' to 'movie'.
+
+The required configuration is now complete. Try running metaproc now. metaproc should start printing out each directory it encounters, plus each file that needs processing, along with the determined facts.
+
+Remember, metaproc, with the Media Browser processor, is not destructive in any way to your media files. It will however, re-write metadata so you may lose any custom metadata.
+
+If you find that it is necessary to exclude some paths, say a directory named 'The Gruen Transfer', you can use the following snippet in a .metaproc-override file in the parent directory -
+
+bq. @PATH_EXCLUDE_REGEXPS = [ '/The Gruen Transfer/$' ] + PATH_EXCLUDE_REGEXPS@
+
+This snippet tells metaproc to add the specified regular expression to the start of the @PATH_EXCLUDE_REGEXPS@ list of regular expressions. More complex adjustments can be made if necessary because the existing configuration is available in the configuration file (e.g. you can choose to insert it at a certain position).
+
+If you need to tell metaproc what a particular fact should be for a directory or file, use the following snippet in a @.metaproc-override@ file -
+
+bq. @facts = {
+    'series_title' : 'Castle 2009'
+}@
+
+The recognised facts are -
+
+* @series_title@
+* @season_number@
+* @episode_number@
+* @type@ (movie or tv)
+* @movie_title@
+
+h3. Cleaning up metadata
+
+metaproc also has a feature that allows you to delete metadata for a particular path. This is often used if metaproc detects the wrong show for a particular directory and you want it to start again (metaproc will not re-download metadata if it detects that metadata already exists).
+
+To do this, use the @-C@ or the @-R@ switch followed by a path. The @-C@ switch will only clean the specified path and none of its children, while the @-R@ switch will clean the specified path and its children too. In order to be as non-destructive as possible, metaproc will only clean the metadata for media files that still exist (i.e. it won't delete orphaned metadata). Therefore before renaming files, delete the metadata first.
+
+For example,
+
+bq. @./start_python.sh src/metaproc/metaproc.py -s settings.py -R /mnt/media/TV/Castle@
+
+h2. Creating custom processors
+
+metaproc can be used to output other forms of metadata. To do this, a new processor would need to be created. The easiest way to do this is to base it on the existing Media Browser processor (@src/metaproc/processors/mediabrowser.py@). Specifically, you will need to implement the @process@ and @clean@ functions, which are called when a path needs to be processed for metadata and when a path needs to be cleaned of metadata respectively.
+
+h2. Credits
+
+metaproc was written by Samuel Lai (sam@edgylogic.com), but builds on the great "tmdb":https://github.com/doganaydin/themoviedb and "tvdb_api":https://github.com/dbr/tvdb_api modules.
